@@ -17,6 +17,22 @@ class SalaryCalculator
         }
 
         $overtime = $workedHours - $this->monthlyNorm;
+
         return ($this->monthlyNorm * $this->baseRate) + ($overtime * $this->baseRate * $this->overtimeMultiplier);
+    }
+
+    public function getMonthlyNorm(): int
+    {
+        return $this->monthlyNorm;
+    }
+
+    public function getBaseRate(): float
+    {
+        return $this->baseRate;
+    }
+
+    public function getOvertimeMultiplier(): float
+    {
+        return $this->overtimeMultiplier;
     }
 }

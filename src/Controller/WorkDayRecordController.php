@@ -4,11 +4,16 @@ namespace App\Controller;
 
 use App\Entity\WorkDayRecord;
 use App\Entity\Employee;
+use App\Service\SalaryCalculator;
+use App\Repository\WorkDayRecordRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+
+
 
 final class WorkDayRecordController extends AbstractController
 {
@@ -32,11 +37,16 @@ final class WorkDayRecordController extends AbstractController
         }
 
         // Parsuj daty
-        $start = \DateTime::createFromFormat('d.m.Y H:i', $data['shiftStartTime']);
-        $end = \DateTime::createFromFormat('d.m.Y H:i', $data['shiftEndTime']);
+        $start = new \DateTime($data['shiftStartTime']);
+        $end = new \DateTime($data['shiftEndTime']);
 
         if (!$start || !$end) {
             return $this->json(['error' => 'Niepoprawny format daty. Użyj: dd.mm.yyyy HH:ii'], 400);
+        }
+
+        // Czas zakończenia nie może być mniejszy niż szac rozpoczęcia - walidacja
+        if ($end <= $start) {
+            return $this->json(['error' => 'Czas zakończenia musi być późniejszy niż rozpoczęcia.'], 400);
         }
 
         // Sprawdź maks. 12 godzin
@@ -47,7 +57,7 @@ final class WorkDayRecordController extends AbstractController
         }
 
         // Wyciągnij dzień rozpoczęcia
-        $workDate = \DateTime::createFromFormat('Y-m-d', $start->format('Y-m-d'));
+        $workDate = (clone $start)->setTime(0, 0);
 
         // Czy już istnieje rekord tego dnia?
         $existing = $em->getRepository(WorkDayRecord::class)->findOneBy([
@@ -78,7 +88,10 @@ final class WorkDayRecordController extends AbstractController
 
 
     #[Route('/api/summary/day', name: 'work_summary_day', methods: ['POST'])]
-    public function summaryForDay(Request $request, EntityManagerInterface $em): JsonResponse
+    public function summaryForDay(
+        Request $request, 
+        EntityManagerInterface $em,
+        SalaryCalculator $calculator): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
@@ -86,7 +99,7 @@ final class WorkDayRecordController extends AbstractController
             return $this->json(['error' => 'Brak wymaganych danych.'], 400);
         }
 
-        $employeeId = $data['unikalny identyfikator pracownika'];
+        $employeeId = Uuid::fromString($data['unikalny identyfikator pracownika']);
         $dateInput = \DateTime::createFromFormat('d.m.Y', $data['data']);
 
         if (!$dateInput) {
@@ -109,34 +122,44 @@ final class WorkDayRecordController extends AbstractController
             return $this->json(['error' => 'Brak zarejestrowanej pracy w tym dniu.'], 404);
         }
 
-        // Oblicz ilość godzin
         $start = $record->getShiftStartTime();
         $end = $record->getShiftEndTime();
-        $diff = $start->diff($end);
-        $hours = $diff->h + round($diff->i / 60, 1);
 
-        $rate = 20; // PLN
-        $total = $hours * $rate;
+        $diff = $start->diff($end);
+        $minutes = $diff->h * 60 + $diff->i;
+        $rounded = round($minutes / 30) * 30;
+        $workedHours = $rounded / 60;
+
+        $baseRate = $calculator->getBaseRate();
+        $total = $calculator->calculateSalary($workedHours);
 
         return $this->json([
             'response' => [
                 'suma po przeliczeniu' => "{$total} PLN",
-                'ilość godzin z danego dnia' => $hours,
-                'stawka' => "{$rate} PLN",
+                'ilość godzin z danego dnia' => $workedHours,
+                'stawka' => "{$baseRate} PLN",
             ]
         ]);
     }
 
+    
+
     #[Route('/api/summary/month', name: 'work_summary_month', methods: ['POST'])]
-    public function summaryForMonth(Request $request, EntityManagerInterface $em): JsonResponse
+    public function summaryForMonth(
+        Request $request, 
+        EntityManagerInterface $em,
+        SalaryCalculator $calculator,
+        WorkDayRecordRepository $workDayRecordRepository): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
+
+        
 
         if (!isset($data['unikalny identyfikator pracownika'], $data['data'])) {
             return $this->json(['error' => 'Brak wymaganych danych.'], 400);
         }
 
-        $employeeId = $data['unikalny identyfikator pracownika'];
+        $employeeId = Uuid::fromString($data['unikalny identyfikator pracownika']);
         $monthInput = \DateTime::createFromFormat('m.Y', $data['data']);
 
         if (!$monthInput) {
@@ -145,26 +168,30 @@ final class WorkDayRecordController extends AbstractController
 
         // Znajdź pracownika
         $employee = $em->getRepository(\App\Entity\Employee::class)->find($employeeId);
+        
         if (!$employee) {
             return $this->json(['error' => 'Nie znaleziono pracownika.'], 404);
         }
 
+        
+
         // Oblicz początek i koniec miesiąca
-        $startDate = \DateTime::createFromFormat('Y-m-d', $monthInput->format('Y-m-01'));
+        $timezone = new \DateTimeZone('Europe/Warsaw');
+        $startDate = \DateTime::createFromFormat('Y-m-d', $monthInput->format('Y-m-01'), $timezone);
+        $startDate->setTime(0, 0, 0);
         $endDate = clone $startDate;
-        $endDate->modify('last day of this month');
+        $endDate->modify('last day of this month')->setTime(23, 59, 59);
+
 
         // Pobierz wszystkie rekordy czasu pracy z danego miesiąca
-        $records = $em->getRepository(\App\Entity\WorkDayRecord::class)->createQueryBuilder('r')
-            ->andWhere('r.employee = :employee')
-            ->andWhere('r.workingDayDate BETWEEN :start AND :end')
-            ->setParameter('employee', $employee)
-            ->setParameter('start', $startDate)
-            ->setParameter('end', $endDate)
-            ->getQuery()
-            ->getResult();
+        $records = $workDayRecordRepository->findByEmployeeIdAndDateRange(
+            $employeeId,
+            $startDate,
+            $endDate
+        );            
 
         $totalMinutes = 0;
+
 
         foreach ($records as $record) {
             $start = $record->getShiftStartTime();
@@ -172,32 +199,34 @@ final class WorkDayRecordController extends AbstractController
 
             $diff = $start->diff($end);
             $minutes = $diff->h * 60 + $diff->i;
+            
 
             // Zaokrąglenie do 30 minut
             $rounded = round($minutes / 30) * 30;
             $totalMinutes += $rounded;
         }
 
+        
+
         // Przelicz na godziny
         $totalHours = $totalMinutes / 60;
-        $normHours = min($totalHours, 40);
-        $overtimeHours = max($totalHours - 40, 0);
 
-        // Stawki
-        $rate = 20;
-        $overtimeRate = 2 * $rate;
+        $monthlyNorm = $calculator->getMonthlyNorm();
+        $baseRate = $calculator->getBaseRate();
+        $overtimeMultiplier = $calculator->getOvertimeMultiplier();
 
-        // Wypłata
-        $normalPay = $normHours * $rate;
-        $overtimePay = $overtimeHours * $overtimeRate;
-        $totalPay = $normalPay + $overtimePay;
+        // Przelicz na godziny        
+        $normalHours = min($totalHours, $monthlyNorm);
+        $overtimeHours = max($totalHours - $monthlyNorm, 0);
+        $totalPay = $calculator->calculateSalary($totalHours);
+
 
         return $this->json([
             'response' => [
-                'ilość normalnych godzin z danego miesiąca' => $normHours,
-                'stawka' => "{$rate} PLN",
+                'ilość normalnych godzin z danego miesiąca' => $normalHours,
+                'stawka' => "{$baseRate} PLN",
                 'ilość nadgodzin z danego miesiąca' => $overtimeHours,
-                'stawka nadgodzinowa' => "{$overtimeRate} PLN",
+                'stawka nadgodzinowa' => $baseRate * $overtimeMultiplier,
                 'suma po przeliczeniu' => "{$totalPay} PLN"
             ]
         ]);
