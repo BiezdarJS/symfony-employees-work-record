@@ -75,4 +75,55 @@ final class WorkDayRecordController extends AbstractController
             ]
         ]);
     }
+
+
+    #[Route('/api/summary/day', name: 'work_summary_day', methods: ['POST'])]
+    public function summaryForDay(Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+
+        if (!isset($data['unikalny identyfikator pracownika'], $data['data'])) {
+            return $this->json(['error' => 'Brak wymaganych danych.'], 400);
+        }
+
+        $employeeId = $data['unikalny identyfikator pracownika'];
+        $dateInput = \DateTime::createFromFormat('d.m.Y', $data['data']);
+
+        if (!$dateInput) {
+            return $this->json(['error' => 'Nieprawidłowy format daty. Użyj DD.MM.RRRR'], 400);
+        }
+
+        // Znajdź pracownika
+        $employee = $em->getRepository(Employee::class)->find($employeeId);
+        if (!$employee) {
+            return $this->json(['error' => 'Nie znaleziono pracownika.'], 404);
+        }
+
+        // Szukamy rekordu pracy dla tego dnia
+        $record = $em->getRepository(WorkDayRecord::class)->findOneBy([
+            'employee' => $employee,
+            'workingDayDate' => $dateInput,
+        ]);
+
+        if (!$record) {
+            return $this->json(['error' => 'Brak zarejestrowanej pracy w tym dniu.'], 404);
+        }
+
+        // Oblicz ilość godzin
+        $start = $record->getShiftStartTime();
+        $end = $record->getShiftEndTime();
+        $diff = $start->diff($end);
+        $hours = $diff->h + round($diff->i / 60, 1);
+
+        $rate = 20; // PLN
+        $total = $hours * $rate;
+
+        return $this->json([
+            'response' => [
+                'suma po przeliczeniu' => "{$total} PLN",
+                'ilość godzin z danego dnia' => $hours,
+                'stawka' => "{$rate} PLN",
+            ]
+        ]);
+    }
 }
