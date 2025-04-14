@@ -1,0 +1,47 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\DBAL\Schema\Schema;
+use Doctrine\Migrations\AbstractMigration;
+
+/**
+ * Auto-generated Migration: Please modify to your needs!
+ */
+final class Version20250414153319 extends AbstractMigration
+{
+    public function getDescription(): string
+    {
+        return '';
+    }
+
+    public function up(Schema $schema): void
+    {
+        // this up() migration is auto-generated, please modify it to your needs
+        $this->addSql(<<<'SQL'
+            CREATE TABLE employee (id BINARY(16) NOT NULL, full_name VARCHAR(255) NOT NULL, PRIMARY KEY(id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci`
+        SQL);
+        $this->addSql(<<<'SQL'
+            CREATE TABLE work_day_record (id INT AUTO_INCREMENT NOT NULL, shift_start_time DATETIME NOT NULL, shift_end_time DATETIME NOT NULL, working_day_date DATE NOT NULL, employee_id BINARY(16) NOT NULL, INDEX IDX_2789D99F8C03F15C (employee_id), PRIMARY KEY(id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci`
+        SQL);
+        $this->addSql(<<<'SQL'
+            ALTER TABLE work_day_record ADD CONSTRAINT FK_2789D99F8C03F15C FOREIGN KEY (employee_id) REFERENCES employee (id)
+        SQL);
+    }
+
+    public function down(Schema $schema): void
+    {
+        // this down() migration is auto-generated, please modify it to your needs
+        $this->addSql(<<<'SQL'
+            ALTER TABLE work_day_record DROP FOREIGN KEY FK_2789D99F8C03F15C
+        SQL);
+        $this->addSql(<<<'SQL'
+            DROP TABLE employee
+        SQL);
+        $this->addSql(<<<'SQL'
+            DROP TABLE work_day_record
+        SQL);
+    }
+}
