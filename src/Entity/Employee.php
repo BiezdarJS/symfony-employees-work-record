@@ -17,10 +17,10 @@ class Employee
     #[ORM\CustomIdGenerator(class: 'doctrine.uuid_generator')]
     private ?Uuid $id = null;
 
-    #[ORM\Column(length: 255)]
+    #[ORM\Column(length: 255, nullable: false)]
     private ?string $firstName = null;
 
-    #[ORM\Column(length: 255)]
+    #[ORM\Column(length: 255, nullable: false)]
     private ?string $lastName = null;
 
     #[ORM\OneToMany(mappedBy: 'employee', targetEntity: WorkDayRecord::class, cascade: ['persist', 'remove'])]
