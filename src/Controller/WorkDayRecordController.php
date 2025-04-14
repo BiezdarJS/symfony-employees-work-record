@@ -126,4 +126,80 @@ final class WorkDayRecordController extends AbstractController
             ]
         ]);
     }
+
+    #[Route('/api/summary/month', name: 'work_summary_month', methods: ['POST'])]
+    public function summaryForMonth(Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+
+        if (!isset($data['unikalny identyfikator pracownika'], $data['data'])) {
+            return $this->json(['error' => 'Brak wymaganych danych.'], 400);
+        }
+
+        $employeeId = $data['unikalny identyfikator pracownika'];
+        $monthInput = \DateTime::createFromFormat('m.Y', $data['data']);
+
+        if (!$monthInput) {
+            return $this->json(['error' => 'Nieprawidłowy format daty. Użyj MM.RRRR'], 400);
+        }
+
+        // Znajdź pracownika
+        $employee = $em->getRepository(\App\Entity\Employee::class)->find($employeeId);
+        if (!$employee) {
+            return $this->json(['error' => 'Nie znaleziono pracownika.'], 404);
+        }
+
+        // Oblicz początek i koniec miesiąca
+        $startDate = \DateTime::createFromFormat('Y-m-d', $monthInput->format('Y-m-01'));
+        $endDate = clone $startDate;
+        $endDate->modify('last day of this month');
+
+        // Pobierz wszystkie rekordy czasu pracy z danego miesiąca
+        $records = $em->getRepository(\App\Entity\WorkDayRecord::class)->createQueryBuilder('r')
+            ->andWhere('r.employee = :employee')
+            ->andWhere('r.workingDayDate BETWEEN :start AND :end')
+            ->setParameter('employee', $employee)
+            ->setParameter('start', $startDate)
+            ->setParameter('end', $endDate)
+            ->getQuery()
+            ->getResult();
+
+        $totalMinutes = 0;
+
+        foreach ($records as $record) {
+            $start = $record->getShiftStartTime();
+            $end = $record->getShiftEndTime();
+
+            $diff = $start->diff($end);
+            $minutes = $diff->h * 60 + $diff->i;
+
+            // Zaokrąglenie do 30 minut
+            $rounded = round($minutes / 30) * 30;
+            $totalMinutes += $rounded;
+        }
+
+        // Przelicz na godziny
+        $totalHours = $totalMinutes / 60;
+        $normHours = min($totalHours, 40);
+        $overtimeHours = max($totalHours - 40, 0);
+
+        // Stawki
+        $rate = 20;
+        $overtimeRate = 2 * $rate;
+
+        // Wypłata
+        $normalPay = $normHours * $rate;
+        $overtimePay = $overtimeHours * $overtimeRate;
+        $totalPay = $normalPay + $overtimePay;
+
+        return $this->json([
+            'response' => [
+                'ilość normalnych godzin z danego miesiąca' => $normHours,
+                'stawka' => "{$rate} PLN",
+                'ilość nadgodzin z danego miesiąca' => $overtimeHours,
+                'stawka nadgodzinowa' => "{$overtimeRate} PLN",
+                'suma po przeliczeniu' => "{$totalPay} PLN"
+            ]
+        ]);
+    }
 }
