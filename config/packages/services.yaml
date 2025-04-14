@@ -4,7 +4,7 @@ parameters:
     working_time.overtime_multiplier: 2
 
 services:
-    App\Service\WorkTimeCalculator:
+    App\Service\SalaryCalculator:
         arguments:
             $monthlyNorm: '%working_time.monthly_norm%'
             $baseRate: '%working_time.base_rate%'
