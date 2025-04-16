@@ -87,21 +87,26 @@ final class WorkDayRecordController extends AbstractController
     }
 
 
-    #[Route('/api/summary/day', name: 'work_summary_day', methods: ['POST'])]
+    #[Route('/api/summary/day', name: 'work_summary_day', methods: ['GET'])]
     public function summaryForDay(
         Request $request, 
         EntityManagerInterface $em,
         SalaryCalculator $calculator): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        $employeeIdParam = $request->query->get('employeeId');
+        $dateParam = $request->query->get('date'); // Oczekiwany format: DD.MM.RRRR
 
-        if (!isset($data['unikalny identyfikator pracownika'], $data['data'])) {
-            return $this->json(['error' => 'Brak wymaganych danych.'], 400);
+        if (!$employeeIdParam || !$dateParam) {
+            return $this->json(['error' => 'Brak wymaganych parametrów (employeeId i date).'], 400);
         }
 
-        $employeeId = Uuid::fromString($data['unikalny identyfikator pracownika']);
-        $dateInput = \DateTime::createFromFormat('d.m.Y', $data['data']);
-
+        try {
+            $employeeId = Uuid::fromString($employeeIdParam);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => 'Nieprawidłowy identyfikator UUID.'], 400);
+        }
+    
+        $dateInput = \DateTime::createFromFormat('d.m.Y', $dateParam);
         if (!$dateInput) {
             return $this->json(['error' => 'Nieprawidłowy format daty. Użyj DD.MM.RRRR'], 400);
         }
@@ -126,7 +131,7 @@ final class WorkDayRecordController extends AbstractController
         $end = $record->getShiftEndTime();
 
         $diff = $start->diff($end);
-        $minutes = $diff->h * 60 + $diff->i;
+        $minutes = ($diff->days * 24 * 60) + ($diff->h * 60) + $diff->i;
         $rounded = round($minutes / 30) * 30;
         $workedHours = $rounded / 60;
 
@@ -144,24 +149,28 @@ final class WorkDayRecordController extends AbstractController
 
     
 
-    #[Route('/api/summary/month', name: 'work_summary_month', methods: ['POST'])]
+    #[Route('/api/summary/month', name: 'work_summary_month', methods: ['GET'])]
     public function summaryForMonth(
         Request $request, 
         EntityManagerInterface $em,
         SalaryCalculator $calculator,
         WorkDayRecordRepository $workDayRecordRepository): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        $employeeIdParam = $request->query->get('employeeId');
+        $dateParam = $request->query->get('date');
 
-        
-
-        if (!isset($data['unikalny identyfikator pracownika'], $data['data'])) {
-            return $this->json(['error' => 'Brak wymaganych danych.'], 400);
+        if (!$employeeIdParam || !$dateParam) {
+            return $this->json(['error' => 'Brak wymaganych parametrów (employeeId i date).'], 400);
+        }
+    
+        try {
+            $employeeId = Uuid::fromString($employeeIdParam);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => 'Nieprawidłowy identyfikator UUID.'], 400);
         }
 
-        $employeeId = Uuid::fromString($data['unikalny identyfikator pracownika']);
-        $monthInput = \DateTime::createFromFormat('m.Y', $data['data']);
-
+        
+        $monthInput = \DateTime::createFromFormat('m.Y', $dateParam);
         if (!$monthInput) {
             return $this->json(['error' => 'Nieprawidłowy format daty. Użyj MM.RRRR'], 400);
         }
@@ -198,7 +207,7 @@ final class WorkDayRecordController extends AbstractController
             $end = $record->getShiftEndTime();
 
             $diff = $start->diff($end);
-            $minutes = $diff->h * 60 + $diff->i;
+            $minutes = ($diff->days * 24 * 60) + ($diff->h * 60) + $diff->i;
             
 
             // Zaokrąglenie do 30 minut

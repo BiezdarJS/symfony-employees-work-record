@@ -30,29 +30,21 @@ json
 
 ### Endpoint: Podsumowanie czasu pracy dzień
 
-**URL:** POST /api/summary/day
+**URL:** GET /api/summary/day
 **Content-Type:** application/json
 
 Podsumowuje czas pracy pracownika za dany dzień
 
 #### 🔸 Przykładowe żądanie:
-json
-{
-  "unikalny identyfikator pracownika": "123e4567-e89b-12d3-a456-426614174000",
-  "data": "01.01.1970"
-}
+http://localhost:8000/api/summary/day?employeeId=01963e32-ac9c-7f3e-bcec-8df46b6d060d&date=01.04.2025
 
 
 ### Endpoint: Podsumowanie czasu pracy miesiąc
 
-**URL:** POST /api/summary/month
+**URL:** GET /api/summary/month
 **Content-Type:** application/json
 
 Podsumowuje czas pracy pracownika za cały miesiąc
 
 #### 🔸 Przykładowe żądanie:
-json
-{
-  "unikalny identyfikator pracownika": "123e4567-e89b-12d3-a456-426614174000",
-  "data": "01.1970"
-}
+http://localhost:8000/api/summary/month?employeeId=01963e32-ac9c-7f3e-bcec-8df46b6d060d&date=04.2025
